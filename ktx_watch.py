@@ -64,8 +64,8 @@ HELP_TEXT = (
     "  · 울산 서울 2026-07-27 (시간 생략 = 하루 종일)\n"
     "  · 서울 울산 내일 오후\n\n"
     "관리 명령:\n"
-    "  · 목록 — 내 감시 목록 보기\n"
-    "  · 해제 2 — 2번 감시 삭제\n"
+    "  · 목록 — 내 감시 목록 보기 (각 감시 앞에 번호가 표시됨)\n"
+    "  · 해제 1 — 목록의 1번 감시를 삭제 (지우고 싶은 번호를 넣으세요)\n"
     "  · 도움말 — 이 안내 다시 보기\n\n"
     "매진이던 열차에 자리가 나면 바로 알려드립니다.\n"
     "알림을 받으면 코레일톡/SRT 앱에서 직접 예매하세요."
@@ -464,7 +464,12 @@ def handle_message(text, chat_id, watches, state, searcher, telegram, config):
             lines = "\n".join(
                 f"#{num} {watch_label(w)}" for num, w in enumerate(mine, start=1)
             )
-            telegram.send(chat_id, f"📋 내 감시 목록\n{lines}\n\n삭제: 해제 번호")
+            telegram.send(
+                chat_id,
+                f"📋 내 감시 목록\n{lines}\n\n"
+                f"❌ 해제하려면 \"해제 번호\"를 보내세요.\n"
+                f"   예) 1번을 지우려면 → 해제 1",
+            )
         return
 
     m = re.fullmatch(r"/?(?:해제|삭제|취소|remove|del)\s*#?(\d+)", text)
@@ -477,7 +482,11 @@ def handle_message(text, chat_id, watches, state, searcher, telegram, config):
             state["seen"].pop(str(target["uid"]), None)
             telegram.send(chat_id, f"🗑 #{number} 해제했어요: {watch_label(target)}")
         else:
-            telegram.send(chat_id, f"#{number} 감시를 찾을 수 없어요. '목록'으로 확인해보세요.")
+            telegram.send(
+                chat_id,
+                f"{number}번 감시가 없어요. '목록'을 보내 번호를 확인한 뒤 "
+                f'"해제 번호" 형식으로 다시 보내주세요.',
+            )
         return
 
     # 감시 등록 시도
@@ -503,7 +512,7 @@ def handle_message(text, chat_id, watches, state, searcher, telegram, config):
         telegram.send(
             chat_id,
             f"이미 등록된 감시예요: #{number} {watch_label(duplicate)}\n"
-            "'목록'으로 확인하거나 '해제 번호'로 지울 수 있어요.",
+            f"❌ 지우려면 → 해제 {number}",
         )
         return
 
@@ -537,6 +546,7 @@ def handle_message(text, chat_id, watches, state, searcher, telegram, config):
             reply += "지금 바로 예매 가능한 열차가 있어요! 매진분은 자리 나면 알려드릴게요."
         else:
             reply += "전부 매진이네요. 자리가 나면 바로 알려드릴게요."
+    reply += f"\n\n(이 감시를 그만 보려면 → 해제 {number})"
     telegram.send(chat_id, reply)
     log(f"감시 등록 (uid={watch['uid']}, chat={chat_id}): {watch_label(watch)}")
 
