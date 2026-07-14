@@ -281,8 +281,10 @@ class TrainSearcher:
 
         if self.korail is None and self._login_korail() is None:
             return []
+        # search_train은 시각 기준 ~10편만 반환하므로, 하루 전체를 훑는
+        # search_train_allday를 써야 낮/저녁 열차까지 모두 본다.
         try:
-            found = self.korail.search_train(
+            found = self.korail.search_train_allday(
                 dep, arr, date=yyyymmdd, time="000000", include_no_seats=True
             )
         except NoResultsError:
@@ -291,7 +293,7 @@ class TrainSearcher:
             # 세션 만료 가능성 → 재로그인 후 1회 재시도
             self._login_korail()
             try:
-                found = self.korail.search_train(
+                found = self.korail.search_train_allday(
                     dep, arr, date=yyyymmdd, time="000000", include_no_seats=True
                 )
             except NoResultsError:
