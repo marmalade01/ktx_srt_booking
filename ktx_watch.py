@@ -379,6 +379,11 @@ def trains_in_window(trains, watch):
     ]
 
 
+def user_watches(watches, chat_id):
+    """해당 사용자의 감시만 등록 순서대로 반환한다 (표시 번호 = 목록 내 순번)."""
+    return [w for w in watches if w["chat_id"] == chat_id]
+
+
 def sweep(searcher, telegram, watches, state, config):
     """모든 감시 건을 검사해서 새로 자리 난 열차를 알린다."""
     today = datetime.now().date()
@@ -390,7 +395,7 @@ def sweep(searcher, telegram, watches, state, config):
         w_date = datetime.strptime(w["date"], "%Y-%m-%d").date()
         if w_date < today or (w_date == today and w["to_minute"] <= now_minute):
             watches.remove(w)
-            state["seen"].pop(str(w["id"]), None)
+            state["seen"].pop(str(w["uid"]), None)
             expired.append(w)
     for w in expired:
         telegram.send(w["chat_id"], f"⏰ 기간이 지나 감시를 종료했어요: {watch_label(w)}")
@@ -409,7 +414,7 @@ def sweep(searcher, telegram, watches, state, config):
         trains = routes[(w["dep"], w["arr"], w["date"])]
         if trains is None:
             continue
-        seen = state["seen"].setdefault(str(w["id"]), {})
+        seen = state["seen"].setdefault(str(w["uid"]), {})
         newly_open = []
         is_today = w_date_is_today = w["date"] == f"{today:%Y-%m-%d}"
         for t in trains_in_window(trains, w):
@@ -431,7 +436,7 @@ def sweep(searcher, telegram, watches, state, config):
                 f"🚄 취소표 발견! {watch_label(w)}\n{lines}\n\n"
                 f"지금 바로 {'SRT 앱' if all(t['carrier'] == 'SRT' for t in newly_open) else '코레일톡/SRT 앱'}에서 예매하세요!",
             )
-            log(f"감시#{w['id']} 알림: {[t['key'] for t in newly_open]}")
+            log(f"감시 알림 (uid={w['uid']}): {[t['key'] for t in newly_open]}")
 
     return all_errors
 
@@ -452,27 +457,27 @@ def handle_message(text, chat_id, watches, state, searcher, telegram, config):
         return
 
     if lower in ("목록", "리스트", "list", "감시목록"):
-        mine = [w for w in watches if w["chat_id"] == chat_id]
+        mine = user_watches(watches, chat_id)
         if not mine:
             telegram.send(chat_id, "등록된 감시가 없어요.\n예: 서울 울산 7/25 17-20")
         else:
-            lines = "\n".join(f"#{w['id']} {watch_label(w)}" for w in mine)
+            lines = "\n".join(
+                f"#{num} {watch_label(w)}" for num, w in enumerate(mine, start=1)
+            )
             telegram.send(chat_id, f"📋 내 감시 목록\n{lines}\n\n삭제: 해제 번호")
         return
 
     m = re.fullmatch(r"/?(?:해제|삭제|취소|remove|del)\s*#?(\d+)", text)
     if m:
-        watch_id = int(m.group(1))
-        target = next(
-            (w for w in watches if w["id"] == watch_id and w["chat_id"] == chat_id),
-            None,
-        )
-        if target:
+        number = int(m.group(1))  # 사용자 목록 내 순번 (1부터)
+        mine = user_watches(watches, chat_id)
+        if 1 <= number <= len(mine):
+            target = mine[number - 1]
             watches.remove(target)
-            state["seen"].pop(str(watch_id), None)
-            telegram.send(chat_id, f"🗑 해제했어요: {watch_label(target)}")
+            state["seen"].pop(str(target["uid"]), None)
+            telegram.send(chat_id, f"🗑 #{number} 해제했어요: {watch_label(target)}")
         else:
-            telegram.send(chat_id, f"#{watch_id} 감시를 찾을 수 없어요. '목록'으로 확인해보세요.")
+            telegram.send(chat_id, f"#{number} 감시를 찾을 수 없어요. '목록'으로 확인해보세요.")
         return
 
     # 감시 등록 시도
@@ -494,25 +499,29 @@ def handle_message(text, chat_id, watches, state, searcher, telegram, config):
         None,
     )
     if duplicate:
+        number = user_watches(watches, chat_id).index(duplicate) + 1
         telegram.send(
             chat_id,
-            f"이미 등록된 감시예요: #{duplicate['id']} {watch_label(duplicate)}\n"
+            f"이미 등록된 감시예요: #{number} {watch_label(duplicate)}\n"
             "'목록'으로 확인하거나 '해제 번호'로 지울 수 있어요.",
         )
         return
 
-    state["next_id"] = state.get("next_id", 0) + 1
-    watch = {"id": state["next_id"], "chat_id": chat_id, **parsed}
+    # uid는 seen 상태 저장용 전역 고유키 (사용자 간 충돌 방지),
+    # 사용자에게 보이는 번호는 아래에서 '내 목록 내 순번'으로 계산한다.
+    state["next_uid"] = state.get("next_uid", 0) + 1
+    watch = {"uid": state["next_uid"], "chat_id": chat_id, **parsed}
     watches.append(watch)
+    number = len(user_watches(watches, chat_id))
 
     # 즉시 1회 조회해서 현재 상태를 알려주고, 이후 비교 기준으로 저장
     trains, errors = searcher.search(watch["dep"], watch["arr"], watch["date"])
     in_window = trains_in_window(trains, watch)
-    seen = state["seen"].setdefault(str(watch["id"]), {})
+    seen = state["seen"].setdefault(str(watch["uid"]), {})
     for t in in_window:
         seen[t["key"]] = t["general"] or t["special"]
 
-    reply = f"✅ 감시 #{watch['id']} 등록: {watch_label(watch)}\n"
+    reply = f"✅ 감시 #{number} 등록: {watch_label(watch)}\n"
     if errors and not trains:
         reply += "⚠️ 지금 조회에 실패해서 현재 상태를 못 보여드려요. 감시는 계속합니다."
     elif not in_window:
@@ -529,7 +538,7 @@ def handle_message(text, chat_id, watches, state, searcher, telegram, config):
         else:
             reply += "전부 매진이네요. 자리가 나면 바로 알려드릴게요."
     telegram.send(chat_id, reply)
-    log(f"감시#{watch['id']} 등록 (chat={chat_id}): {watch_label(watch)}")
+    log(f"감시 등록 (uid={watch['uid']}, chat={chat_id}): {watch_label(watch)}")
 
 
 # ---------------------------------------------------------------- 메인 루프
@@ -543,7 +552,14 @@ def main():
     telegram = Telegram(config["telegram_token"])
     searcher = TrainSearcher(config)
     watches = load_json(WATCHES_FILE, [])
-    state = load_json(STATE_FILE, {"offset": 0, "next_id": 0, "seen": {}})
+    state = load_json(STATE_FILE, {"offset": 0, "next_uid": 0, "seen": {}})
+
+    # 구버전 마이그레이션: id → uid (seen 상태 키 유지)
+    state.setdefault("next_uid", state.pop("next_id", 0))
+    for w in watches:
+        if "uid" not in w:
+            w["uid"] = w.pop("id", None) or (state["next_uid"] + 1)
+            state["next_uid"] = max(state["next_uid"], w["uid"])
 
     # 과거 중복 등록분 정리 (같은 chat·구간·날짜·시간대는 첫 건만 유지)
     seen_keys, deduped = set(), []
@@ -551,7 +567,7 @@ def main():
         key = (w["chat_id"], w["dep"], w["arr"], w["date"],
                w["from_minute"], w["to_minute"])
         if key in seen_keys:
-            state["seen"].pop(str(w["id"]), None)
+            state["seen"].pop(str(w["uid"]), None)
             continue
         seen_keys.add(key)
         deduped.append(w)
