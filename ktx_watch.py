@@ -481,6 +481,26 @@ def handle_message(text, chat_id, watches, state, searcher, telegram, config):
         telegram.send(chat_id, error)
         return
 
+    # 같은 사람이 동일 구간·날짜·시간대를 이미 등록했으면 중복 생성 방지
+    duplicate = next(
+        (
+            w
+            for w in watches
+            if w["chat_id"] == chat_id
+            and (w["dep"], w["arr"], w["date"], w["from_minute"], w["to_minute"])
+            == (parsed["dep"], parsed["arr"], parsed["date"],
+                parsed["from_minute"], parsed["to_minute"])
+        ),
+        None,
+    )
+    if duplicate:
+        telegram.send(
+            chat_id,
+            f"이미 등록된 감시예요: #{duplicate['id']} {watch_label(duplicate)}\n"
+            "'목록'으로 확인하거나 '해제 번호'로 지울 수 있어요.",
+        )
+        return
+
     state["next_id"] = state.get("next_id", 0) + 1
     watch = {"id": state["next_id"], "chat_id": chat_id, **parsed}
     watches.append(watch)
@@ -524,6 +544,21 @@ def main():
     searcher = TrainSearcher(config)
     watches = load_json(WATCHES_FILE, [])
     state = load_json(STATE_FILE, {"offset": 0, "next_id": 0, "seen": {}})
+
+    # 과거 중복 등록분 정리 (같은 chat·구간·날짜·시간대는 첫 건만 유지)
+    seen_keys, deduped = set(), []
+    for w in watches:
+        key = (w["chat_id"], w["dep"], w["arr"], w["date"],
+               w["from_minute"], w["to_minute"])
+        if key in seen_keys:
+            state["seen"].pop(str(w["id"]), None)
+            continue
+        seen_keys.add(key)
+        deduped.append(w)
+    if len(deduped) != len(watches):
+        log(f"중복 감시 {len(watches) - len(deduped)}건 정리")
+        watches = deduped
+        save_json(WATCHES_FILE, watches)
 
     interval = config.get("interval_seconds", 180)
     admin = config.get("admin_chat_id")
