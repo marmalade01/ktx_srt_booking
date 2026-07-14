@@ -55,6 +55,10 @@ STATIONS = {
 
 WEEKDAY_KO = "월화수목금토일"
 ERROR_NOTIFY_THRESHOLD = 5
+
+# 예매 바로가기 (특정 열차 딥링크는 불가 → 각 사의 모바일 예매 페이지로 연결)
+KORAIL_BOOKING_URL = "https://m.letskorail.com/"
+SRT_BOOKING_URL = "https://etk.srail.kr/main.do"
 MAX_WATCH_DAYS = 40  # 이 날짜 이후는 등록 거부 (예매 오픈 전)
 
 HELP_TEXT = (
@@ -115,9 +119,15 @@ class Telegram:
         )
         return data.get("result", [])
 
-    def send(self, chat_id, text):
+    def send(self, chat_id, text, buttons=None):
+        """buttons: [(라벨, URL), ...] 지정 시 탭 가능한 인라인 버튼을 붙인다."""
+        params = {"chat_id": chat_id, "text": text}
+        if buttons:
+            params["reply_markup"] = {
+                "inline_keyboard": [[{"text": label, "url": url}] for label, url in buttons]
+            }
         try:
-            self._call("sendMessage", {"chat_id": chat_id, "text": text})
+            self._call("sendMessage", params)
         except Exception as e:
             log(f"텔레그램 발송 실패 (chat_id={chat_id}): {e}")
 
@@ -431,10 +441,17 @@ def sweep(searcher, telegram, watches, state, config):
                 f"{t['dep_hm']}→{t['arr_hm']} {seat_text(t)}"
                 for t in newly_open
             )
+            carriers = {t["carrier"] for t in newly_open}
+            buttons = []
+            if "KTX" in carriers:
+                buttons.append(("🚄 코레일 예매하기", KORAIL_BOOKING_URL))
+            if "SRT" in carriers:
+                buttons.append(("🚄 SRT 예매하기", SRT_BOOKING_URL))
             telegram.send(
                 w["chat_id"],
                 f"🚄 취소표 발견! {watch_label(w)}\n{lines}\n\n"
-                f"지금 바로 {'SRT 앱' if all(t['carrier'] == 'SRT' for t in newly_open) else '코레일톡/SRT 앱'}에서 예매하세요!",
+                "취소표는 금방 사라져요. 아래 버튼으로 바로 예매하세요!",
+                buttons=buttons,
             )
             log(f"감시 알림 (uid={w['uid']}): {[t['key'] for t in newly_open]}")
 
@@ -547,7 +564,16 @@ def handle_message(text, chat_id, watches, state, searcher, telegram, config):
         else:
             reply += "전부 매진이네요. 자리가 나면 바로 알려드릴게요."
     reply += f"\n\n(이 감시를 그만 보려면 → 해제 {number})"
-    telegram.send(chat_id, reply)
+
+    # 지금 예매 가능한 열차가 있으면 예매 버튼도 함께
+    reg_buttons = []
+    if not (errors and not trains):
+        open_carriers = {t["carrier"] for t in in_window if t["general"] or t["special"]}
+        if "KTX" in open_carriers:
+            reg_buttons.append(("🚄 코레일 예매하기", KORAIL_BOOKING_URL))
+        if "SRT" in open_carriers:
+            reg_buttons.append(("🚄 SRT 예매하기", SRT_BOOKING_URL))
+    telegram.send(chat_id, reply, buttons=reg_buttons or None)
     log(f"감시 등록 (uid={watch['uid']}, chat={chat_id}): {watch_label(watch)}")
 
 
