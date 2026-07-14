@@ -1,0 +1,7 @@
+config.json
+watches.json
+state.json
+ktx_watch.log
+__pycache__/
+*.key
+*.pem

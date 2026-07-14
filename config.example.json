@@ -1,0 +1,15 @@
+{
+  "telegram_token": "여기에_봇_토큰_입력",
+  "admin_chat_id": "여기에_관리자(본인)_chat_id",
+  "allowed_chat_ids": null,
+  "korail": {
+    "id": "코레일_멤버십번호_또는_이메일_또는_휴대폰",
+    "password": "코레일_비밀번호"
+  },
+  "srt": {
+    "id": "SRT_회원번호_또는_이메일_또는_휴대폰",
+    "password": "SRT_비밀번호"
+  },
+  "interval_seconds": 180,
+  "request_gap_seconds": 1
+}
