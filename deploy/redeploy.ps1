@@ -6,8 +6,11 @@ $SERVER = "ubuntu@168.107.2.200"
 $SRC = "C:\QaProject\ktx-watch"
 
 Write-Host "[1/2] 파일 업로드 중..."
-scp -i $KEY "$SRC\ktx_watch.py" "$SRC\config.json" "${SERVER}:~/ktx-watch/"
+scp -i $KEY "$SRC\ktx_watch.py" "$SRC\config.json" "$SRC\requirements.txt" "${SERVER}:~/ktx-watch/"
 if (-not $?) { Write-Host "업로드 실패"; exit 1 }
+# vendor 폴더(우회 korail2)도 통째로 업로드
+scp -i $KEY -r "$SRC\vendor" "${SERVER}:~/ktx-watch/"
+if (-not $?) { Write-Host "vendor 업로드 실패"; exit 1 }
 
 Write-Host "[2/2] 서비스 재시작 중..."
 ssh -i $KEY $SERVER "sudo systemctl restart ktx-watch && systemctl is-active ktx-watch"

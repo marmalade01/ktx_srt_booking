@@ -1,0 +1,7 @@
+# KTX/SRT 감시 봇 의존성
+# korail2는 vendor/korail2 (DynaPath 우회 패치본)를 직접 사용하므로 pip 설치 안 함.
+# 아래는 vendor/korail2 + SRTrain 이 필요로 하는 서드파티 패키지.
+requests
+six
+pycryptodome
+SRTrain

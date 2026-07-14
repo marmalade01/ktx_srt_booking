@@ -25,6 +25,9 @@ from pathlib import Path
 sys.stdout.reconfigure(encoding="utf-8", errors="replace")
 
 BASE_DIR = Path(__file__).resolve().parent
+# 코레일 매크로 차단(DynaPath) 우회 패치가 적용된 korail2를 우선 사용한다.
+# (pip의 korail2는 MACRO ERROR로 막히므로 프로젝트에 동봉한 버전을 먼저 로드)
+sys.path.insert(0, str(BASE_DIR / "vendor"))
 CONFIG_FILE = BASE_DIR / "config.json"
 WATCHES_FILE = BASE_DIR / "watches.json"
 STATE_FILE = BASE_DIR / "state.json"
